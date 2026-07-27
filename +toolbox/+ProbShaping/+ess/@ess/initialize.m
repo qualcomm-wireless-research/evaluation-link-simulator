@@ -35,7 +35,7 @@ obj.prob = toolbox.ProbShaping.ess.mbDistribution(obj.effectiveAlphabetSize, obj
 obj.numResidualBlock=0;
 if obj.nLast>0 && obj.nShapedBlocks>=2
     n_total_last=obj.nMax+obj.nLast;
-    assert(mod(n_total_last,2)==0, 'ESS segmentation_method=1 requires residual #shaped symbols to be even.');
+    assert(mod(n_total_last,2)==0, 'ESS segmentation requires residual #shaped symbols to be even.');
     obj.nLast=n_total_last/2;
     obj.numResidualBlock=2;
     [obj.nShaperBitsLast,obj.maxEnergyLast] = obj.compute_num_info(obj.nLast);

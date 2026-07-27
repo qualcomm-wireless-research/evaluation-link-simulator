@@ -3,9 +3,9 @@ function source_bits = deshape_tb(transport_block, shaping_info)
 %
 % Inverts build_tb_for_ps: for each CB, slices the [punctured; unshaped_before;
 % shaped; unshaped_after] region out of the TB, undoes the SBPM deinterleave,
-% runs ess.decode on the shaped bits, then reassembles source bits in the same
-% order build_tb_for_ps consumed them:
-%   [ess_info; punctured; unshaped_before; unshaped_after]
+% runs the PS codec's decode on the shaped bits, then reassembles source bits
+% in the same order build_tb_for_ps consumed them:
+%   [shaped_info; punctured; unshaped_before; unshaped_after]
 % Concatenating over CBs yields the length-payloadTransportBlockLength vector
 % that build_tb_for_ps started from.
 
@@ -40,9 +40,9 @@ for i_cb = 1:shaping_info.num_cb
 
     shaped_pre_deinterleave = toolbox.ProbShaping.mapping.sbpm_interleave( ...
         shaped_bits, qam_deinterleave);
-    ess_info_bits = int8(cb_plan.codecState.decode(shaped_pre_deinterleave));
+    shaped_info_bits = int8(cb_plan.codecState.decode(shaped_pre_deinterleave));
 
-    cb_source = [ess_info_bits; punctured_bits; unshaped_before_bits; unshaped_after_bits];
+    cb_source = [shaped_info_bits; punctured_bits; unshaped_before_bits; unshaped_after_bits];
     source_bits(src_cursor:(src_cursor + numel(cb_source) - 1)) = cb_source;
     src_cursor = src_cursor + numel(cb_source);
 end

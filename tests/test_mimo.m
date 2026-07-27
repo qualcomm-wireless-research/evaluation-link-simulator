@@ -8,7 +8,7 @@ addpath(repo_root);
 %% USER SETTINGS
 chain_modes = ["uniform", "ps"];      % chains to sweep: "uniform", "ps", or both
 mcs_list = 11;                        % fixed-MCS points to sweep
-snr_db = 5:1:18;                    % SNR sweep grid in dB
+snr_db = 10:1:22;                    % SNR sweep grid in dB
 num_transport_blocks = 200;           % transport blocks per SNR point
 rng_seed = 42;                        % RNG seed for repeatable runs
 
@@ -25,7 +25,7 @@ ps_tx_scaling = "lut";          % PS TX power scaling: "empirical" or "lut"
 match_ps_tbs_to_uniform = true;       % match PS payload TBS to the uniform chain
 
 tdl_delay_spread = 100e-9;            % TDL RMS delay spread in seconds
-maximum_doppler_hz = 11;              % maximum Doppler shift in Hz
+maximum_doppler_hz = 70;              % maximum Doppler shift in Hz
 open_loop_precoder = "identity";      % open-loop precoder
 receiver_demapper = "sphere";         % detector: "mmse" or "sphere"
 max_ldpc_iterations = 25;             % LDPC decoder iteration cap
@@ -137,7 +137,7 @@ fprintf("Saved TDL-A open-loop 2x2 sweep outputs to %s\n", output_dir);
 
 %% LOCAL FUNCTIONS
 function nu = getMatchedNu(results)
-% Return the matched ESS nu when TBS matching is active, else NaN.
+% Return the matched PS nu when TBS matching is active, else NaN.
 nu = NaN;
 if isfield(results, "tbsMatch") && isfield(results.tbsMatch, "enabled") ...
         && logical(results.tbsMatch.enabled) && isfield(results.tbsMatch, "nu")

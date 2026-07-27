@@ -17,6 +17,7 @@ cfg.simulation.snrDb = -6:2:18;
 cfg.simulation.numTransportBlocks = 200;
 cfg.simulation.rngSeed = 0;
 cfg.simulation.verbose = true;
+cfg.simulation.maxNumTransmissions = 1;   % HARQ transmissions, per TB (1 = no retransmission)
 
 cfg.carrier.nSizeGrid = 52;
 cfg.carrier.subcarrierSpacingKHz = 30;
@@ -31,7 +32,7 @@ cfg.pdsch.symbolAllocation = [0 14];
 cfg.pdsch.mappingType = 'A';
 cfg.pdsch.rnti = 1;
 cfg.pdsch.nId = [];
-cfg.pdsch.rv = 0;
+cfg.pdsch.rv = [0 2 3 1];   % RV sequence for HARQ
 
 cfg.pdsch.dmrs.configurationType = 1;
 cfg.pdsch.dmrs.typeAPosition = 2;
@@ -75,6 +76,8 @@ cfg.shaping.numShapedAmplitudeBitLevelsPerDimension = 0;
 cfg.shaping.maxSupportedCodeBlocks = 1024;
 cfg.shaping.ess.nMax = 128;
 cfg.shaping.ess.nMantissa = 8;
+cfg.shaping.ecc.nMax = 1024;
+cfg.shaping.ecc.listSize = 1;
 
 if nargin >= 1 && ~isempty(user_cfg)
     cfg = mergeConfig(cfg, user_cfg);

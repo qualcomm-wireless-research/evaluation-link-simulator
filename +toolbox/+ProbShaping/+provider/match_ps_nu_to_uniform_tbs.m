@@ -1,9 +1,10 @@
-function match = match_ess_nu_to_uniform_tbs(cfg, varargin)
-%MATCHESSNUTOUNIFORMTBS Find ESS nu_MB that matches uniform-QAM TBS.
+function match = match_ps_nu_to_uniform_tbs(cfg, varargin)
+%MATCHPSNUTOUNIFORMTBS Find PS nu_MB that matches uniform-QAM TBS.
 %
-% match = toolbox.ProbShaping.provider.match_ess_nu_to_uniform_tbs(cfg) uses the PDSCH
-% allocation in cfg and searches cfg.shaping.nu so that the ESS payload TBS
-% is close to the uniform-QAM TBS for the same MCS index.
+% match = toolbox.ProbShaping.provider.match_ps_nu_to_uniform_tbs(cfg) uses the PDSCH
+% allocation in cfg and searches cfg.shaping.nu so that the PS payload TBS
+% is close to the uniform-QAM TBS for the same MCS index. Works for either
+% shaping.mode ("ess" or "ecc") via the ShapingMode option.
 
 cfg = toolbox.defaultConfig(cfg);
 
@@ -11,6 +12,7 @@ parser = inputParser;
 parser.addParameter('UniformMcsTable', cfg.pdsch.mcsTable);
 parser.addParameter('PsMcsTable', cfg.shaping.mcsTable);
 parser.addParameter('Levels', cfg.shaping.numShapedAmplitudeBitLevelsPerDimension);
+parser.addParameter('ShapingMode', cfg.shaping.mode);
 parser.addParameter('ToleranceFraction', 0.01);
 parser.addParameter('NuLower', 0.0);
 parser.addParameter('NuUpper', NaN);
@@ -22,13 +24,13 @@ opts = parser.Results;
 requested_shaped_bit_level = opts.Levels;
 if requested_shaped_bit_level < 1
     error("toolbox:InvalidShapingLevels", ...
-        "ESS TBS matching requires at least one shaped amplitude bit level.");
+        "PS TBS matching requires at least one shaped amplitude bit level.");
 end
 
 [uniform_mcs_info, uniform_carrier, uniform_pdsch, uniform_pdsch_info, uniform_tbs] = ...
     computeUniformSizing(cfg, opts.UniformMcsTable);
 [ps_mcs_info, ps_carrier, ps_pdsch, ps_pdsch_info, ps_chain_tbs] = ...
-    computePsChainSizing(cfg, opts.PsMcsTable, requested_shaped_bit_level);
+    computePsChainSizing(cfg, opts.PsMcsTable, requested_shaped_bit_level, opts.ShapingMode);
 mod_info = toolbox.ProbShaping.provider.get_ps_modulation_info(ps_pdsch.Modulation);
 shaped_bit_level = min(requested_shaped_bit_level, mod_info.numAmplitudeBitsPerDimension);
 
@@ -51,7 +53,7 @@ evaluations = struct( ...
     function evaluation = evaluateNu(nu)
         ps_cfg = cfg;
         ps_cfg.shaping.enabled = true;
-        ps_cfg.shaping.mode = "ess";
+        ps_cfg.shaping.mode = opts.ShapingMode;
         ps_cfg.shaping.mcsTable = opts.PsMcsTable;
         ps_cfg.shaping.useMcsTableNu = false;
         ps_cfg.shaping.nu = nu;
@@ -175,11 +177,11 @@ tbs = nrTBS( ...
 end
 
 function [mcs_info, carrier, pdsch, pdsch_info, tbs] = ...
-    computePsChainSizing(cfg, ps_mcs_table, shaped_bit_level)
+    computePsChainSizing(cfg, ps_mcs_table, shaped_bit_level, shaping_mode)
 
 ps_cfg = cfg;
 ps_cfg.shaping.enabled = true;
-ps_cfg.shaping.mode = "ess";
+ps_cfg.shaping.mode = shaping_mode;
 ps_cfg.shaping.mcsTable = ps_mcs_table;
 ps_cfg.shaping.useMcsTableNu = false;
 ps_cfg.shaping.numShapedAmplitudeBitLevelsPerDimension = shaped_bit_level;

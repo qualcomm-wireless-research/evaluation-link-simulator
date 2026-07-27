@@ -10,6 +10,12 @@ if cfg.simulation.numTransportBlocks <= 0
     error("toolbox:InvalidSimulation", "numTransportBlocks must be positive.");
 end
 
+if cfg.simulation.maxNumTransmissions < 1 ...
+        || mod(cfg.simulation.maxNumTransmissions, 1) ~= 0
+    error("toolbox:InvalidMaxNumTransmissions", ...
+        "maxNumTransmissions must be a positive integer.");
+end
+
 if cfg.pdsch.numLayers < 1 || cfg.pdsch.numLayers > 4
     error("toolbox:InvalidLayers", ...
         "This baseline supports 1 to 4 layers (single codeword) only.");
@@ -47,8 +53,13 @@ if any(cfg.pdsch.prbSet < 0) || any(cfg.pdsch.prbSet >= cfg.carrier.nSizeGrid)
         "PRB allocation must stay within the configured carrier grid.");
 end
 
-if cfg.pdsch.rv < 0 || cfg.pdsch.rv > 3 || mod(cfg.pdsch.rv, 1) ~= 0
-    error("toolbox:InvalidRV", "rv must be an integer between 0 and 3.");
+if any(cfg.pdsch.rv < 0) || any(cfg.pdsch.rv > 3) || any(mod(cfg.pdsch.rv, 1) ~= 0)
+    error("toolbox:InvalidRV", "rv must contain integers between 0 and 3.");
+end
+
+if numel(cfg.pdsch.rv) < cfg.simulation.maxNumTransmissions
+    error("toolbox:RvSequenceTooShort", ...
+        "pdsch.rv must have at least maxNumTransmissions entries.");
 end
 
 if cfg.channel.numReceiveAntennas < 1
@@ -101,15 +112,20 @@ if cfg.shaping.maxSupportedCodeBlocks < 1 ...
 end
 
 if isfield(cfg.shaping, 'enabled') && logical(cfg.shaping.enabled) ...
-        && ~strcmpi(char(string(cfg.shaping.mode)), 'ess')
+        && ~ismember(lower(string(cfg.shaping.mode)), ["ess", "ecc"])
     error("toolbox:UnsupportedShapingMode", ...
-        "The active PS path supports shaping.mode = 'ess' only.");
+        "The active PS path supports shaping.mode = 'ess' or 'ecc' only.");
 end
 
 tx_scaling = lower(string(cfg.shaping.txScaling));
 if ~ismember(tx_scaling, ["empirical", "lut"])
     error("toolbox:UnsupportedPsTxScaling", ...
         "shaping.txScaling must be 'empirical' or 'lut'.");
+end
+
+if strcmpi(string(cfg.shaping.mode), "ecc") && strcmpi(tx_scaling, "lut")
+    error("toolbox:UnsupportedPsTxScaling", ...
+        "shaping.txScaling = 'lut' is only supported for shaping.mode = 'ess'.");
 end
 
 if cfg.shaping.ess.nMax < 1 || mod(cfg.shaping.ess.nMax, 1) ~= 0
@@ -120,5 +136,15 @@ end
 if cfg.shaping.ess.nMantissa < 1 || mod(cfg.shaping.ess.nMantissa, 1) ~= 0
     error("toolbox:InvalidEssMantissa", ...
         "shaping.ess.nMantissa must be a positive integer.");
+end
+
+if cfg.shaping.ecc.nMax < 1 || mod(cfg.shaping.ecc.nMax, 1) ~= 0
+    error("toolbox:InvalidEccNMax", ...
+        "shaping.ecc.nMax must be a positive integer.");
+end
+
+if cfg.shaping.ecc.listSize < 1 || mod(cfg.shaping.ecc.listSize, 1) ~= 0
+    error("toolbox:InvalidEccListSize", ...
+        "shaping.ecc.listSize must be a positive integer.");
 end
 end

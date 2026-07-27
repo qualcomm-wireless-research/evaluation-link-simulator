@@ -1,12 +1,13 @@
 # evaluation-link-simulator
 
-MATLAB based link-level simulator for fixed-MCS BLER and throughput studies, comparing a standard 5G NR uniform-QAM chain against a probabilistic-shaping (PS) chain built around (a variation of) ESS (Enumerative Sphere Shaping).
+MATLAB based link-level simulator for fixed-MCS BLER and throughput studies, comparing a standard 5G NR uniform-QAM chain against probabilistic-shaping (PS) chains built around ESS (Enumerative Sphere Shaping) or ECC (polar-code cover-code shaping).
 
 ## Supported Features
 
 - Fixed-MCS DL PDSCH BLER and throughput versus SNR, for both AWGN and TDL fading channels.
 - 5G NR uniform-QAM transmit/receive chain using MATLAB 5G Toolbox primitives (`nrDLSCH`, `nrPDSCH*`, `nrOFDMModulate`, `nrDLSCHDecoder`).
-- ESS-based probabilistic-shaping (PS) chain: prestructured shaped transport blocks, scrambling modification, PS demod preprocessing, shared MMSE/sphere detector, modified descrambling before `nrDLSCHDecoder`.
+- Two probabilistic-shaping (PS) codecs, selected via `cfg.shaping.mode`, sharing the same TX/RX pipeline hooks: ESS-based shaping and ECC-based (multi-level polar cover-code) shaping. See [ECC-Based Shaping](#ecc-based-shaping).
+- IR-HARQ based retransmission and combining: up to `cfg.simulation.maxNumTransmissions` attempts per TB with a configurable RV sequence and early exit on CRC success. See [HARQ / Retransmission Support](#harq--retransmission-support).
 - PS MCS tables (`ps_mcs_table1`, `ps_mcs_table2`), plus uniform tables `qam64`/`qam256`.
 - Uniform-TBS matching: for each MCS with the coding rate determined from the MCS table, compute the MB parameter `nu` so PS payload TBS matches the uniform-QAM TBS for the same MCS (`shaping.matchUniformTbs`).
 - TDL-A/B/C/D/E fading channel through `nrTDLChannel`, plus an AWGN channel mode with an identity/selecting spatial matrix.
@@ -17,6 +18,7 @@ MATLAB based link-level simulator for fixed-MCS BLER and throughput studies, com
 ## Requirements
 
 - MATLAB R2023a or newer (for 1024QAM support).
+- For ECC based shaping, MATLAB R2024a and newer are required. 
 - MATLAB 5G Toolbox.
 - Communications Toolbox is required for the sphere-decoder receiver path (`comm.SphereDecoder`).
 
@@ -57,9 +59,10 @@ MATLAB based link-level simulator for fixed-MCS BLER and throughput studies, com
 
 ## Active Entry Points
 
-- `tests/test_awgn.m`: interactive AWGN fixed-MCS sweep (uniform and/or PS chain modes). Edit the `USER SETTINGS` block at the top.
+- `tests/test_awgn.m`: interactive AWGN fixed-MCS sweep, three-way comparison of uniform QAM, ESS-shaped, and ECC-shaped PS chains. Edit the `USER SETTINGS` block at the top.
 - `tests/test_mimo.m`: interactive TDL/open-loop MIMO sweep driver (uniform and/or PS chain modes).
 - `tests/test_simo.m`: interactive TDL SIMO sweep driver (1 Tx, many Rx, single layer; uniform and/or PS chain modes).
+- `tests/test_awgn_harq.m`: AWGN fixed-MCS evualation with IR-HARQ.
 - `toolbox.runSimulation(cfg)`: programmatic single-simulation API, used by all driver scripts.
 
 Run either driver from MATLAB in the repository root:
@@ -74,6 +77,10 @@ run('tests/test_mimo.m')
 
 ```matlab
 run('tests/test_simo.m')
+```
+
+```matlab
+run('tests/test_awgn_harq.m')
 ```
 
 Each script writes outputs to a timestamped folder under `results/`:
@@ -95,7 +102,7 @@ disp(results.summaryTable)
 Edit only the `USER SETTINGS` block in `tests/test_awgn.m` / `tests/test_mimo.m` / `tests/test_simo.m` for normal runs. Settings common to all three scripts (shown with representative defaults; see each script for the full list):
 
 ```matlab
-chain_modes = ["uniform", "ps"];   % "uniform", "ps", or both
+chain_modes = ["uniform", "ess", "ecc"];   % "uniform", "ps", or both
 mcs_list = 20;                     % fixed-MCS points to sweep
 snr_db = 16:0.5:20;                % SNR sweep grid, dB
 num_transport_blocks = 100;        % TBs per SNR point
@@ -122,8 +129,8 @@ output_root = "results/awgn";      % output directory root
 
 Per-script differences:
 
-- `tests/test_awgn.m`: AWGN channel, single antenna (defaults `1x1`, 1 layer). No channel/precoding settings — the base config hardcodes the AWGN model.
-- `tests/test_mimo.m`: TDL fading (hardcoded `channel.model = "tdl"`, `TDL-E` profile) with open-loop precoding (defaults `4x4`, 4 layers). Adds `tdl_delay_spread`, `maximum_doppler_hz`, and `open_loop_precoder` (`"dft"`, `"identity"`, `"hadamard"`); `output_root = "results/mimo"`.
+- `tests/test_awgn.m`: AWGN channel, single antenna (defaults `1x1`, 1 layer). No channel/precoding settings — the base config hardcodes the AWGN model. `chain_modes` defaults to `["uniform", "ess", "ecc"]` (the other two scripts default to `["uniform", "ps"]`, where `"ps"` means ESS).
+- `tests/test_mimo.m`: TDL fading (hardcoded `channel.model = "tdl"`, `TDL-A` profile) with open-loop precoding (defaults `4x4`, 4 layers). Adds `tdl_delay_spread`, `maximum_doppler_hz`, and `open_loop_precoder` (`"dft"`, `"identity"`, `"hadamard"`); `output_root = "results/mimo"`.
 - `tests/test_simo.m`: TDL fading (hardcoded `channel.model = "tdl"`, `TDL-A` profile), 1 Tx / many Rx / single layer with the identity open-loop precoder. Adds `tdl_delay_spread`, `maximum_doppler_hz`, and `open_loop_precoder`; `output_root = "results/mimo"`.
 
 ## TX Chain
@@ -144,7 +151,7 @@ PS adds, ahead of the shared path:
 ```text
 source bits
 -> prestructured transport block (build_tb_for_ps.m)
--> ESS encode (per code block, +toolbox/+ProbShaping/+ess)
+-> ESS/ECC encode (per code block, +toolbox/+ProbShaping/+ess (/+ecc))
 -> multiplexing of shaped and unshaped bits
 ```
 
@@ -161,8 +168,7 @@ nrOFDMDemodulate                              ┐ upstream (runSimulation.m, sha
 ── new_pdsch_decode.m ──────────────────────────────────────────────────────
 -> [PS] preprocess_demod_input.m (Cholesky/QR (Y_eq, H_eq), PS-aware norm)
 -> nrEqualizeMMSE (or comm.SphereDecoder)     ┐ shared demapper / LLR path
--> nrLayerDemap / nrSymbolDemodulate (soft LLRs)│
--> CSI weighting                              ┘
+-> nrLayerDemap / nrSymbolDemodulate (soft LLRs)│                              ┘
 -> [PS*] descramble (uniform: full; PS: selective ps_descramble.m)
 ─────────────────────────────────────────────────────────────────────────────
 -> nrDLSCHDecoder                             ┐ downstream (runSimulation.m, shared)
@@ -170,18 +176,18 @@ nrOFDMDemodulate                              ┐ upstream (runSimulation.m, sha
 -> [PS] deshape_tb.m -> PS source bits (after decode)
 ```
 
-Stages between the `new_pdsch_decode.m` markers are owned by that file. `[PS] preprocess_demod_input.m` runs only when `cfg.shaping.enabled` is true; the equalize/demap/LLR/CSI block is common code both chains execute; `[PS*] descramble` is a full descramble for uniform and a selective `ps_descramble.m` for PS. `nrOFDMDemodulate`/channel estimation/`nrExtractResources` (upstream) and `nrDLSCHDecoder`/metrics (downstream) live in `runSimulation.m` and are unconditionally shared.
+Stages between the `new_pdsch_decode.m` markers are owned by that file. `[PS] preprocess_demod_input.m` runs only when `cfg.shaping.enabled` is true; the equalize/demap/LLR block is common code both chains execute; `[PS*] descramble` is a full descramble for uniform and a selective `ps_descramble.m` for PS. `nrOFDMDemodulate`/channel estimation/`nrExtractResources` (upstream) and `nrDLSCHDecoder`/metrics (downstream) live in `runSimulation.m` and are unconditionally shared.
 
 ## Uniform vs PS: Shared and Divergent Paths
 
-Both chains run on the same standard NR spine. PS reuses the entire spine and only bolts narrow modules onto the ends: transport-block construction before `nrDLSCH` at TX, and demod preprocessing / TB recovery around the detector at RX. Everything in the center column is identical for both chains.
+Both chains run on the same standard NR flow. PS reuses the entire chain and only modifies the following: transport-block construction before `nrDLSCH` at TX, and demod preprocessing / TB recovery around the detector at RX. Everything in the center column is identical for both chains.
 
-The two `new_pdsch*` files are the only shared-path files that branch internally on `cfg.shaping.enabled`; the annotations below show exactly which operations each one owns.
+The two `new_pdsch*` files are the only shared-path files that branch internally on `cfg.shaping.enabled`; the annotations below show exactly which operations each one owns. 
 
 ```mermaid
 flowchart TB
     payload["payload bits"]
-    src["<b>source bits</b><br/>ESS encode per CB (+ess)<br/>multiplex shaped / unshaped<br/>prestructured TB (build_tb_for_ps)"]
+    src["<b>source bits</b><br/>ESS/ECC encode per CB <br/>multiplex shaped / unshaped<br/>prestructured TB (build_tb_for_ps)"]
 
     dlsch["<b>nrDLSCH</b><br/>TB/CB CRC · CB seg · LDPC · rate match · SBPM interleave"]
     pdsch["<b>new_pdsch.m</b><br/>scramble → nrSymbolModulate → nrLayerMap<br/><i>[PS] selective ps_scramble + power scaling </i>"]
@@ -230,46 +236,75 @@ Everything else — `nrDLSCH` / LDPC / rate matching / CRC, precoding, OFDM, the
 
 ## Aligning TBS Between Uniform QAM and PS
 
-This alignment exists mainly for **performance-comparison purposes**: a fair uniform-vs-PS BLER-vs-SNR or throughput comparison requires both chains to carry (as closely as possible) the **same number of information bits per transport block** at the **same coding rate**.
+This alignment exists mainly for **performance-comparison purposes**: a fair uniform-vs-PS BLER-vs-SNR or throughput comparison requires both chains to carry (as closely as possible) the **same number of information bits per transport block** at the **same spectral efficiency**.
 
-Both chains keep the coding rate fixed to the value from their MCS table. Instead, we adjust the Maxwell-Boltzmann shaping parameter `nu`:
+For PS, we keep the coding rate fixed to the value from their MCS table. Instead, we adjust the Maxwell-Boltzmann shaping parameter `nu`:
 
 - **Uniform QAM**: the TBS comes directly from `nrTBS` for the selected MCS. This is the reference payload size.
-- **PS**: the PDSCH still carries a standard `nrDLSCH` transport block, but ESS amplitude shaping consumes part of it, so the user-visible **payload TBS** is smaller and depends on `nu` (heavier shaping → fewer payload bits).
+- **PS**: the PDSCH still carries a standard `nrDLSCH` transport block, but ESS/ECC amplitude shaping consumes part of it, so the user-visible **payload TBS** is determined based on `nu` (heavier shaping → fewer payload bits).
 
-When `match_ps_tbs_to_uniform = true` (`shaping.matchUniformTbs`), `+toolbox/+ProbShaping/+provider/match_ess_nu_to_uniform_tbs.m` searches `nu` for the PS payload TBS that comes **closest** to the uniform-QAM target for the same MCS. The match is approximate, not exact: `nu` is only sampled at a finite set of points and the PS payload TBS is itself quantized, so the two payloads generally differ by a small amount (typically within a ~1% tolerance, which the matcher reports). The chosen `nu` overrides the MCS-table `nu_MB` for the run (`shaping.useMcsTableNu = false`), so the PS chain delivers essentially the same information payload at the same coding rate as the uniform reference. Set `match_ps_tbs_to_uniform = false` to instead use the MCS table's fixed `nu_MB` directly (payload TBS then floats).
+When `match_ps_tbs_to_uniform = true` (`shaping.matchUniformTbs`), `+toolbox/+ProbShaping/+provider/match_ps_nu_to_uniform_tbs.m` searches `nu` for the PS payload TBS that comes **closest** to the uniform-QAM target for the same MCS. The match is approximate, not exact: `nu` is only sampled at a finite set of points and the PS payload TBS is itself quantized, so the two payloads generally differ by a small amount (typically within a ~1% tolerance, which the matcher reports). The chosen `nu` overrides the MCS-table `nu_MB` for the run (`shaping.useMcsTableNu = false`), so the PS chain delivers essentially the same information payload at the same coding rate as the uniform reference. Set `match_ps_tbs_to_uniform = false` to instead use the MCS table's fixed `nu_MB` directly (payload TBS then floats).
 
 ## Testing
 
 The driver scripts double as the primary functional tests: each runs a full uniform and/or PS TX/channel/RX sweep end to end and writes a BLER/throughput summary you can inspect for regressions.
 
-- `tests/test_awgn.m`: single-antenna (1 Tx / 1 Rx / 1 layer) fixed-MCS sweep over a waveform-domain AWGN channel. Runs the selected `chain_modes` (uniform and/or PS) across the `snr_db` grid and writes per-SNR BLER, throughput, and shaping metadata to `results/awgn/`. Use it to smoke-test the shared NR chain and PS additions without fading effects.
+- `tests/test_awgn.m`: single-antenna (1 Tx / 1 Rx / 1 layer) fixed-MCS sweep over a waveform-domain AWGN channel. Runs the selected `chain_modes` — uniform, ESS-shaped PS, and/or ECC-shaped PS (defaults to all three) — across the `snr_db` grid and writes per-SNR BLER, throughput, and shaping metadata to `results/awgn/`. Use it to smoke-test the shared NR chain and both PS codecs without fading effects.
 - `tests/test_mimo.m`: multi-antenna fixed-MCS sweep over a TDL fading channel (default 4 Tx / 4 Rx / 4 layers, TDL-A, open-loop precoding). Exercises the MIMO precoding path, TDL channel, and detector (`mmse` or `sphere`) in addition to the shared chain, writing results to `results/mimo/`. `tests/test_simo.m` is the SIMO variant (1 Tx, many Rx, single layer).
 - `tests/test_ess_encode_decode_test.m`: standalone round-trip test for the `@ess` codec (`+toolbox/+ProbShaping/+ess`). Sweeps modulation (`16QAM`/`64QAM`/`256QAM`/`1024QAM`), Maxwell-Boltzmann `nu`, shaped-bit level, and code-block length, builds an energy table and `ess` codec per case, then runs 100 random `encode`/`decode` round trips per case and asserts `decode(encode(bits)) == bits`. Run directly from MATLAB (`run('tests/test_ess_encode_decode_test.m')`); it errors out with a failure count if any round trip mismatches, or prints a `PASS` summary otherwise.
+- `tests/test_ecc_encode_decode_test.m`: similar to ESS, this is a standalone round-trip test for the `@ecc` codec (`+toolbox/+ProbShaping/+ecc`). 
 
 ## PS Extension Notes
 
 Implemented PS pieces:
 
 - PS MCS table lookup through `toolbox.getMcsInfo` (`ps_mcs_table1`, `ps_mcs_table2`); each MCS includes a Maxwell-Boltzmann parameter `nu_MB`.
-- Per-CB ESS distribution matching and ESS encode/decode under `+toolbox/+ProbShaping/+ess` (energy-table DP in `generateEnergyTable.m`, `@ess` class for `encode`/`decode`).
+- Per-CB ESS/ECC distribution matching and ESS/ECC encode/decode under `+toolbox/+ProbShaping/+ess` (energy-table DP in `generateEnergyTable.m`, `@ess` class for `encode`/`decode`),  and `+toolbox/+ProbShaping/+ecc` (`@ecc` class for `encode`/`decode`).
 - TB CRC, CB segmentation, CB CRC, LDPC, and rate matching shared via `nrDLSCH` / `nrDLSCHDecoder`.
-- Modified scrambling for un-shaped bits (`+toolbox/+ProbShaping/+mapping`).
+- Bypassing scrambling for shaped bits (`+toolbox/+ProbShaping/+mapping`).
 - PS-aware demod preprocessing before the shared detector (`+toolbox/+ProbShaping/+demod`).
 - Power normalization for nonuniform shaped constellations, either measured per-TB (`empirical`) or from a precomputed LUT (`lut`).
-- Uniform-TBS matching: bisects `nu_MB` so the PS payload TBS matches the uniform-QAM TBS for the same MCS (`match_ess_nu_to_uniform_tbs.m`).
+- Uniform-TBS matching: bisects `nu_MB` so the PS payload TBS matches the uniform-QAM TBS for the same MCS (`match_ps_nu_to_uniform_tbs.m`).
 - `deshape_tb.m` inverts `build_tb_for_ps.m` to recover PS source bits from a decoded transport block.
 
 For a PS run, set:
 
 ```matlab
-chain_modes = "ps";
+chain_modes = "ess";
 ps_mcs_table = "ps_mcs_table1";
 ```
+
+## ECC-Based Shaping
+
+`+toolbox/+ProbShaping/+ecc/@ecc` is a second PS codec, selected with `cfg.shaping.mode = "ecc"` (default is `"ess"`). It implements **multi-level polar shaping**, but plugs into the same TX/RX pipeline: `build_tb_for_ps.m`, `deshape_tb.m`, `ps_scramble.m`/`ps_descramble.m`, and `preprocess_demod_input.m` all treat the codec generically through `cb_plan.codecState.encode(...)`/`.decode(...)` and are unaware of which mode is active.
+
+Configuration:
+
+- `cfg.shaping.mode = "ecc"` selects the codec (`"ess"` is the default).
+- `cfg.shaping.ecc.nMax` — max polar shaper block length (analogous to `cfg.shaping.ess.nMax`).
+- `cfg.shaping.ecc.listSize` — SCL decoder list size used internally for the cover-code decode step.
+- `cfg.shaping.txScaling` must be `"empirical"` for ECC — the `"lut"` power-scaling table is ESS-only and is rejected by `validate_config.m` when combined with `shaping.mode = "ecc"`.
+- All other PS settings (`cfg.shaping.nu`, `numShapedAmplitudeBitLevelsPerDimension`, `mcsTable`/`useMcsTableNu`, `matchUniformTbs`) are shared with ESS.
+
+Note: the ECC encoder calls `nr5g.internal.polar.decode`, an internal MATLAB 5G Toolbox function only available from **R2024a onward** — stricter than the R2023a baseline required for the rest of the repo (1024QAM support). Verify the ECC path with `tests/test_awgn.m`, which sweeps `"ecc"` by default alongside `"uniform"`/`"ess"`.
+
+## HARQ / Retransmission Support
+
+The simulator supports per-transport-block HARQ retransmission with a configurable redundancy-version (RV) sequence:
+
+- `cfg.simulation.maxNumTransmissions` — max attempts per TB (default `1` = no retransmission).
+- `cfg.pdsch.rv` — RV sequence indexed by attempt number (default `[0 2 3 1]`); must have at least `maxNumTransmissions` entries.
+
+For both uniform QAM, and PS, the simulator utlize MATLAB 5G Toolbox's `nrDLSCHDecoder` soft-combines LLRs across consecutive HARQ attempts internally. 
+
+PS shaping only applies to the initial (RV0) transmission: `validate_config.m` requires `cfg.pdsch.rv(1) == 0` whenever PS is enabled, and any retransmission of a PS transport block automatically falls back to the configured uniform-QAM MCS table (`cfg.shaping.uniformMcsTable`) at the same coding rate — ECC/ESS shaping does not apply to retransmitted bits.
+
+`tests/test_awgn_harq.m` is the dedicated HARQ example driver (`max_num_transmissions = 2`, `rv_sequence = [0 2 3 1]`); its summary rows and plots annotate `MaxNumTransmissions`, and `results.summaryTable` gains `MCS_Table_retx`/`CodedBits_retx` columns whenever `maxNumTransmissions > 1`.
 
 ## Source Layout
 
 - `tests/test_awgn.m`: AWGN fixed-MCS sweep driver (canonical entry point for AWGN studies).
+- `tests/test_awgn_harq.m`: HARQ evualation over AWGN channel.
 - `tests/test_mimo.m`: TDL/open-loop MIMO sweep driver.
 - `tests/test_simo.m`: TDL SIMO (1 Tx, many Rx, single layer) sweep driver.
 - `tests/test_ess_encode_decode_test.m`: standalone ESS codec round-trip test (see Testing).
@@ -284,9 +319,10 @@ ps_mcs_table = "ps_mcs_table1";
 - `+toolbox/+phy/+receiver/`: Sphere-decoder detection and initialization.
 - `+toolbox/+ProbShaping/+tbgen/`: PS shaping-plan initialization (`init.m`), prestructured TB construction (`build_tb_for_ps.m`), and TB deshaping (`deshape_tb.m`).
 - `+toolbox/+ProbShaping/+ess/`: ESS energy-table generation, Maxwell-Boltzmann distribution, TX-scaling LUT, and the `@ess` encoder/decoder class.
+- `+toolbox/+ProbShaping/+ecc/`: ECC based on shaping relying on 5G polar decoder from Matlab 5G toolbox.
 - `+toolbox/+ProbShaping/+mapping/`: PS modified scramble/descramble.
 - `+toolbox/+ProbShaping/+demod/`: PS demod preprocessing.
-- `+toolbox/+ProbShaping/+provider/`: PS modulation information (`get_ps_modulation_info.m`) and ESS-`nu`-to-uniform-TBS matching (`match_ess_nu_to_uniform_tbs.m`).
+- `+toolbox/+ProbShaping/+provider/`: PS modulation information (`get_ps_modulation_info.m`) and ESS/ECC-`nu`-to-uniform-TBS matching (`match_ps_nu_to_uniform_tbs.m`).
 
 ## Branches
 

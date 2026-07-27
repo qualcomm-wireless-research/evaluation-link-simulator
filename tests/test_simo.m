@@ -137,7 +137,7 @@ fprintf("Saved TDL-A open-loop 2x2 sweep outputs to %s\n", output_dir);
 
 %% LOCAL FUNCTIONS
 function nu = getMatchedNu(results)
-% Return the matched ESS nu when TBS matching is active, else NaN.
+% Return the matched PS nu when TBS matching is active, else NaN.
 nu = NaN;
 if isfield(results, "tbsMatch") && isfield(results.tbsMatch, "enabled") ...
         && logical(results.tbsMatch.enabled) && isfield(results.tbsMatch, "nu")

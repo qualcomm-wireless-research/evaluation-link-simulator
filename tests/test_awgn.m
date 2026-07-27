@@ -6,11 +6,12 @@ repo_root = fileparts(fileparts(mfilename('fullpath')));
 addpath(repo_root);
 
 %% USER SETTINGS
-chain_modes = ["uniform", "ps"];      % chains to sweep: "uniform", "ps", or both
+% Three-way comparison: uniform QAM vs ESS-shaped vs ECC-shaped PS chains.
+chain_modes = ["uniform", "ess", "ecc"];   % chains to sweep
 mcs_list = 20;                         % fixed-MCS points to sweep
-snr_db = 16:0.5:20;                     % SNR sweep grid in dB
+snr_db = 16:0.25:19;                     % SNR sweep grid in dB
 num_transport_blocks = 1000;           % transport blocks per SNR point
-rng_seed = 42;                        % RNG seed for repeatable runs
+rng_seed = 42; 
 
 num_tx_antennas = 1;                  % transmit antennas
 num_rx_antennas = 1;                  % receive antennas
@@ -19,10 +20,18 @@ prb_set = 0:7;                        % allocated PRBs (0:7 = 8 RB)
 pdsch_symbol_allocation = [0 9];      % [start symbol, num symbols] within the slot
 
 uniform_mcs_table = "qam256";         % MCS table for the uniform chain
-ps_mcs_table = "ps_mcs_table1";       % MCS table for the PS chain
+ps_mcs_table = "ps_mcs_table1";       % MCS table shared by the ESS and ECC PS chains
 num_shaped_bit_level = 2;             % shaped amplitude bit levels per dimension
-ps_tx_scaling = "lut";                % PS TX power scaling: "empirical" or "lut"
 match_ps_tbs_to_uniform = true;       % match PS payload TBS to the uniform chain
+
+ess_tx_scaling = "lut";               % ESS TX power scaling: "empirical" or "lut"
+ess_n_max = 128;                      % ESS DP table size cap
+ess_n_mantissa = 8;                   % ESS energy-table mantissa bits
+
+% ECC's txScaling must stay "empirical" -- validate_config.m rejects
+% mode='ecc' with txScaling='lut' (LUT scaling is an ESS-only optimization).
+ecc_n_max = 1024;                     % ECC polar shaper max DM block length
+ecc_list_size = 1;                    % ECC SCL decoder list size
 
 receiver_demapper = "mmse";           % detector: "mmse" or "sphere"
 max_ldpc_iterations = 25;             % LDPC decoder iteration cap
@@ -51,9 +60,10 @@ base_cfg.receiver.demapper = receiver_demapper;
 base_cfg.receiver.maxLdpcIterations = max_ldpc_iterations;
 base_cfg.receiver.LDPCDecodingAlgorithm = ldpc_decoding_algorithm;
 
-base_cfg.shaping.ess.nMax = 128;      % ESS DP table size cap
-base_cfg.shaping.ess.nMantissa = 8;   % ESS energy-table mantissa bits
-base_cfg.shaping.txScaling = ps_tx_scaling;
+base_cfg.shaping.ess.nMax = ess_n_max;
+base_cfg.shaping.ess.nMantissa = ess_n_mantissa;
+base_cfg.shaping.ecc.nMax = ecc_n_max;
+base_cfg.shaping.ecc.listSize = ecc_list_size;
 
 base_cfg.mimo.numTransmitAntennas = num_tx_antennas;
 if num_tx_antennas == num_pdsch_layers
@@ -65,8 +75,8 @@ base_cfg.mimo.openLoopPrecoder = "identity";
 
 %% RUN
 % Sweep every chain x MCS combination and collect per-SNR summary rows.
-scenario_prefix = "awgn";                       % output file stem
-scenario_title = "AWGN fixed-MCS sweep";        % figure title
+scenario_prefix = "awgn";                              % output file stem
+scenario_title = "AWGN uniform vs ESS vs ECC comparison";        % figure title
 
 output_dir = fullfile(output_root, scenario_prefix + "_" + string(datetime("now", "Format", "yyyyMMdd_HHmmss")));
 if ~isfolder(output_dir)
@@ -81,7 +91,7 @@ for chain_mode = string(chain_modes)
         cfg = toolbox.defaultConfig(base_cfg);
         cfg.pdsch.mcsIndex = mcs_index;
         cfg = configureChain(cfg, chain_mode, uniform_mcs_table, ps_mcs_table, ...
-            num_shaped_bit_level, ps_tx_scaling, match_ps_tbs_to_uniform);
+            num_shaped_bit_level, ess_tx_scaling, match_ps_tbs_to_uniform);
 
         fprintf("Running %s, MCS %d, AWGN SNR [%g..%g] dB\n", ...
             char(chain_mode), mcs_index, min(snr_db), max(snr_db));
@@ -128,11 +138,11 @@ if make_plots
 end
 
 disp(summary_rows);
-fprintf("Saved AWGN sweep outputs to %s\n", output_dir);
+fprintf("Saved AWGN uniform/ESS/ECC sweep outputs to %s\n", output_dir);
 
 %% LOCAL FUNCTIONS
 function nu = getMatchedNu(results)
-% Return the matched ESS nu when TBS matching is active, else NaN.
+% Return the matched PS nu when TBS matching is active, else NaN.
 nu = NaN;
 if isfield(results, "tbsMatch") && isfield(results.tbsMatch, "enabled") ...
         && logical(results.tbsMatch.enabled) && isfield(results.tbsMatch, "nu")
@@ -144,19 +154,31 @@ end
 end
 
 function cfg = configureChain(cfg, chain_mode, uniform_mcs_table, ps_mcs_table, ...
-    num_shaped_bit_level, ps_tx_scaling, match_ps_tbs_to_uniform)
+    num_shaped_bit_level, ess_tx_scaling, match_ps_tbs_to_uniform)
 % Apply chain-specific MCS table and shaping settings.
 switch lower(string(chain_mode))
     case "uniform"
         cfg.pdsch.mcsTable = uniform_mcs_table;
         cfg.shaping.enabled = false;
         cfg.shaping.numShapedAmplitudeBitLevelsPerDimension = 0;
-    case "ps"
+    case "ess"
         cfg.pdsch.mcsTable = ps_mcs_table;
         cfg.shaping.enabled = true;
+        cfg.shaping.mode = "ess";
         cfg.shaping.mcsTable = ps_mcs_table;
         cfg.shaping.numShapedAmplitudeBitLevelsPerDimension = num_shaped_bit_level;
-        cfg.shaping.txScaling = ps_tx_scaling;
+        cfg.shaping.txScaling = ess_tx_scaling;
+        cfg.shaping.matchUniformTbs = logical(match_ps_tbs_to_uniform);
+        cfg.shaping.uniformMcsTable = uniform_mcs_table;
+    case "ecc"
+        cfg.pdsch.mcsTable = ps_mcs_table;
+        cfg.shaping.enabled = true;
+        cfg.shaping.mode = "ecc";
+        cfg.shaping.mcsTable = ps_mcs_table;
+        cfg.shaping.numShapedAmplitudeBitLevelsPerDimension = num_shaped_bit_level;
+        % ECC has no LUT scaling table -- validate_config.m requires
+        % "empirical" whenever mode='ecc'.
+        cfg.shaping.txScaling = "empirical";
         cfg.shaping.matchUniformTbs = logical(match_ps_tbs_to_uniform);
         cfg.shaping.uniformMcsTable = uniform_mcs_table;
     otherwise

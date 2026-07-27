@@ -29,7 +29,7 @@ avg_energy = mean(mean(abs(symbols) .^ 2));
 
 % Debug probe: shaped 2-bit groups after QAM modulation and layer mapping.
 
-% ESS power scaling
+% PS power scaling
 info.psPowerScaling = 1.0;
 
 if is_ps_path %% perform PS power scaling to normalize Tx power
