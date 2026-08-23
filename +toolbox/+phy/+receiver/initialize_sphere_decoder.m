@@ -1,7 +1,7 @@
 function sphere_decoder_obj = initialize_sphere_decoder(modulation, sphere_algorithm, sphere_radius)
-%INITIALIZESPHEEREDECODER Initialize sphere decoder object for a simulation.
+%INITIALIZESPHEREDECODER Initialize sphere decoder object for a simulation.
 %
-%   SPHERE_DECODER_OBJ = INITIALIZESPHEEREDECODER(MODULATION, SPHERE_ALGORITHM, SPHERE_RADIUS)
+%   SPHERE_DECODER_OBJ = INITIALIZESPHEREDECODER(MODULATION, SPHERE_ALGORITHM, SPHERE_RADIUS)
 %   creates and configures a comm.SphereDecoder object that can be reused
 %   throughout a simulation.
 %
@@ -63,7 +63,6 @@ else
     if ~isempty(sphere_radius)
         decoder.InitialRadius = sphere_radius;
     else
-        % Will be set dynamically based on noise variance
         decoder.InitialRadius = 'Infinity';  % Default to full search
     end
 end

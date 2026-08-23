@@ -2,7 +2,6 @@ function [transport_block, source_bits] = build_tb_for_ps(shaping_info)
 %BUILD_TB_FOR_PS Build the PS transport block.
 %
 % CRC insertion stays NR-owned (`nrDLSCH`).
-% This helper extracts source_bits from the CRC-stripped transport block after decoding for deshaping
 
 payload_len = shaping_info.payloadTransportBlockLength;
 source_bits = randi([0 1], payload_len, 1, 'int8');

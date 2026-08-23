@@ -27,8 +27,6 @@ symbols = nrLayerMap(modulated_symbols, pdsch.NumLayers);
 
 avg_energy = mean(mean(abs(symbols) .^ 2));
 
-% Debug probe: shaped 2-bit groups after QAM modulation and layer mapping.
-
 % PS power scaling
 info.psPowerScaling = 1.0;
 

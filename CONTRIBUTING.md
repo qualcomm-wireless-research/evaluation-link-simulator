@@ -50,13 +50,13 @@ Contributors should develop on branches based off of `main` and submit pull requ
 
 ## MATLAB Verification
 
-For simulator changes, include the smallest practical MATLAB run that exercises the change. Run the full entry point:
+For simulator changes, include the smallest practical MATLAB run that exercises the change. Run the full entry point from the repository root:
 
 ```matlab
-run('tests/test_awgn.m')
+run_scenario("scenario_awgn")
 ```
 
-or a reduced sweep by editing only the `USER SETTINGS` block in `tests/test_awgn.m`, for example:
+or a reduced sweep by editing only the `USER SETTINGS` block in `tests/scenarios/scenario_awgn.m`, for example:
 
 ```matlab
 chain_modes = "uniform";

@@ -50,10 +50,37 @@ switch lower(char(receiver_cfg.demapper))
             pdsch_rx, pdsch_hest, n_var, receiver_cfg.sphereDecoderObj);
         mapped_llrs = reshape(permute(demod_input, [3, 2, 1]), [], 1);
 
+    case 'fast_sphere'
+        assert(isfield(receiver_cfg, 'fastSphereDecoderObj') ...
+            && ~isempty(receiver_cfg.fastSphereDecoderObj), ...
+            'toolbox:MissingFastSphereDecoder', ...
+            ['Fast-sphere decoder requires pre-initialized ', ...
+             'fastSphereDecoderObj in receiver_cfg.']);
+
+        demod_input = toolbox.phy.receiver.detect_pdsch_fast_sphere( ...
+            pdsch_rx, pdsch_hest, n_var, receiver_cfg.fastSphereDecoderObj);
+        mapped_llrs = reshape(permute(demod_input, [3, 2, 1]), [], 1);
+
     otherwise
         error("toolbox:UnsupportedDemapper", ...
-            "Unsupported demapper '%s'. Use 'mmse' or 'sphere'.", ...
+            "Unsupported demapper '%s'. Use 'mmse', 'sphere', or 'fast_sphere'.", ...
             receiver_cfg.demapper);
+end
+
+% LLR magnitude clip for the tree-search detectors. At high SNR the sphere /
+% fast-sphere engines can emit a few over-confident (and occasionally
+% wrong-sign) LLRs whose magnitude grows ~1/n_var; capping to [-A, A] bounds the
+% damage a single bad LLR does to LDPC decoding. MMSE LLRs are already
+% CSI-weighted and well-scaled, so they are left untouched. Configurable via
+% receiver_cfg.llrClipLimit (Inf disables); default set in defaultConfig.m.
+if ismember(lower(char(receiver_cfg.demapper)), {'sphere', 'fast_sphere'})
+    clip_limit = Inf;
+    if isfield(receiver_cfg, 'llrClipLimit') && ~isempty(receiver_cfg.llrClipLimit)
+        clip_limit = receiver_cfg.llrClipLimit;
+    end
+    if isfinite(clip_limit)
+        mapped_llrs = max(min(mapped_llrs, clip_limit), -clip_limit);
+    end
 end
 
 % unscrambling. For PS, we use a scrambling mask to protect the shaped bits.

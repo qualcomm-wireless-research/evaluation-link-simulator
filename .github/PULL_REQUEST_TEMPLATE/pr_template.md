@@ -30,7 +30,7 @@ Describe the MATLAB version, OS, settings, and commands used to verify this chan
 
 ```matlab
 % Paste representative verification commands or USER SETTINGS here.
-% Example: run tests/test_awgn.m with chain_modes = ["uniform","ps"] and mcs_list = <N>
+% Example: run_scenario("scenario_awgn") with chain_modes = ["uniform","ps"] and mcs_list = <N>
 % Outputs are saved under results/<output_root>/<timestamp>/
 ```
 

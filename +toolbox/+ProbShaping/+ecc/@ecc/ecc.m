@@ -15,7 +15,7 @@ classdef ecc
         effectiveAlphabetSize
         nShapedBlocks
         nShaperBitsReg
-        nLast=0             % the number of last DM blocks with length < n_max
+        nLast=0             
         nShaperBitsLast=0
         numBitsPerCodeword
         bitLabel
@@ -151,11 +151,7 @@ classdef ecc
         end
 
         function out = de_rate_match(in, k_s, mother_len)
-        %   DE_RATE_MATCH Inverse of rate_match. Scatters the E_s = numel(in)
-        %   transmitted values back to their mother-code positions via the
-        %   same jn(sel) selection, filling the non-transmitted positions
-        %   with 0 LLR (puncturing) or a large 1e20 LLR (shortening).
-        %   Preserves the input class (double LLRs on the used paths).
+        %   DE_RATE_MATCH Inverse of rate_match. 
             E_s = numel(in);
             subblockInterleaverPattern = nr5g.internal.polar.subblockInterleaveMap(mother_len);   % 0-based
             if k_s / E_s <= 7/16

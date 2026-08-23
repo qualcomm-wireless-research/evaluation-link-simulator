@@ -1,4 +1,4 @@
-% test_ecc_encode_decode_test.m
+% test_ecc_encode_decode.m
 % Standalone round-trip test for the @ecc shaping codec, 
 %
 % For every (modulation, shaped_bit_level, nu, const_len_per_codeword) case it

@@ -4,23 +4,42 @@ MATLAB based link-level simulator for fixed-MCS BLER and throughput studies, com
 
 ## Supported Features
 
-- Fixed-MCS DL PDSCH BLER and throughput versus SNR, for both AWGN and TDL fading channels.
+- Fixed-MCS DL PDSCH BLER and throughput versus SNR, for both AWGN and TDL/CDL fading channels.
 - 5G NR uniform-QAM transmit/receive chain using MATLAB 5G Toolbox primitives (`nrDLSCH`, `nrPDSCH*`, `nrOFDMModulate`, `nrDLSCHDecoder`).
-- Two probabilistic-shaping (PS) codecs, selected via `cfg.shaping.mode`, sharing the same TX/RX pipeline hooks: ESS-based shaping and ECC-based (multi-level polar cover-code) shaping. See [ECC-Based Shaping](#ecc-based-shaping).
+- Two probabilistic-shaping (PS) codecs, selected via `cfg.shaping.mode`, sharing the same TX/RX pipeline hooks:
+  - ESS-based shaping
+  - ECC-based (multi-level polar cover-code) shaping. See [ECC-Based Shaping](#ecc-based-shaping).
 - IR-HARQ based retransmission and combining: up to `cfg.simulation.maxNumTransmissions` attempts per TB with a configurable RV sequence and early exit on CRC success. See [HARQ / Retransmission Support](#harq--retransmission-support).
-- PS MCS tables (`ps_mcs_table1`, `ps_mcs_table2`), plus uniform tables `qam64`/`qam256`.
-- Uniform-TBS matching: for each MCS with the coding rate determined from the MCS table, compute the MB parameter `nu` so PS payload TBS matches the uniform-QAM TBS for the same MCS (`shaping.matchUniformTbs`).
-- TDL-A/B/C/D/E fading channel through `nrTDLChannel`, plus an AWGN channel mode with an identity/selecting spatial matrix.
-- MMSE equalization through `nrEqualizeMMSE`, or sphere detection through `comm.SphereDecoder` (`receiver.demapper = "sphere"`).
-- Open-loop precoding for configurable Tx/Rx/layer counts with `dft`, `identity`, or `hadamard` precoder options; SIMO (no precoding) and open-loop MIMO presets.
+- PS MCS tables (`ps_mcs_table1`, `ps_mcs_table2`, `ps_mcs_table3`), plus uniform tables `qam64`/`qam256`/`qam1024`.
+- Adaptive modulation and coding (AMC) (`cfg.simulation.amc.enabled`): selection between two MCS tables, based on the measured per-layer effective-SNR spread. See [AMC](#amc).
+- TBS matching bewteen uniform QAM and PS: for PS mode, for each MCS with the coding rate determined from the MCS table, compute the MB parameter `nu` so PS payload TBS matches the uniform-QAM TBS for the same MCS (`shaping.matchUniformTbs`).
+- Supported channel models
+  - TDL-A/B/C/D/E fading channel through `nrTDLChannel`, including NTN-TDL-A/B/C/D profiles to simulate NTN scenarios (requires MATLAB R2024a+)
+  - CDL-A/B/C/D/E fading channel through `nrCDLChannel`, with configurable antenna arrays and analog beamforming
+  - AWGN channel mode with 1Tx 1Rx 1layer
+  - Uplink direction support for CDL via `cfg.channel.swapTransmitAndReceive` (swaps Tx/Rx antenna arrays and angles)
+- Supported demodulation methods
+  - MMSE equalization through `nrEqualizeMMSE`
+  - Sphere detection through `comm.SphereDecoder` (`receiver.demapper = "sphere"`)
+  - An open-source fast-sphere decoder (`receiver.demapper = "fast_sphere"`) that is algorithmically faster per detection. See [Fast-Sphere Decoder](#fast-sphere-decoder) for instructions.
+- Precoding methods
+  - Open-loop precoding for configurable Tx/Rx/layer counts with `dft`, `identity`, or `hadamard` precoder options,
+  - SVD-based closed-loop precoding (`mimo.precodingMode = "closedloop"`) based on periodic SRS  with configurable subband size, SRS periodicity and feedback delay; See [Closed-Loop Beamforming](#closed-loop-beamforming).
 - Single-codeword operation, up to 4 PDSCH layers.
+- Rank adaptation: select the proper (rank, MCS) combination for a given channel model
 
 ## Requirements
 
 - MATLAB R2023a or newer (for 1024QAM support).
-- For ECC based shaping, MATLAB R2024a and newer are required. 
+- For ECC based shaping, MATLAB R2024a and newer are required.
 - MATLAB 5G Toolbox.
 - Communications Toolbox is required for the sphere-decoder receiver path (`comm.SphereDecoder`).
+
+## Matlab trial license
+
+Here is a URL for 3GPP members to request a Matlab trial license (including the required toolbox license) to use this simulator.
+
+https://content.mathworks.com/viewer/95cd5382c678ed6708870b99acdc6583
 
 ## Installation Instructions
 
@@ -52,38 +71,41 @@ MATLAB based link-level simulator for fixed-MCS BLER and throughput studies, com
 4. Verify the setup by running a driver script from the repository root:
 
    ```matlab
-   run('tests/test_awgn.m')
+   run_scenario("scenario_awgn")
    ```
 
    A results folder should appear under `results/`. If MATLAB reports an undefined `toolbox.runSimulation`, the repository root is not on the path — re-run step 3.
 
 ## Active Entry Points
 
-- `tests/test_awgn.m`: interactive AWGN fixed-MCS sweep, three-way comparison of uniform QAM, ESS-shaped, and ECC-shaped PS chains. Edit the `USER SETTINGS` block at the top.
-- `tests/test_mimo.m`: interactive TDL/open-loop MIMO sweep driver (uniform and/or PS chain modes).
-- `tests/test_simo.m`: interactive TDL SIMO sweep driver (1 Tx, many Rx, single layer; uniform and/or PS chain modes).
-- `tests/test_awgn_harq.m`: AWGN fixed-MCS evualation with IR-HARQ.
-- `toolbox.runSimulation(cfg)`: programmatic single-simulation API, used by all driver scripts.
+Each scenario is a pure-parameter `tests/scenarios/scenario_*.m` function, run through the single shared driver `tests/run_scenario.m`, which loads it via the common `toolbox.loadScenario` → `toolbox.launchScenario` → `toolbox.post.plot_scenario` pipeline:
 
-Run either driver from MATLAB in the repository root:
+- `tests/scenarios/scenario_awgn.m`: interactive AWGN fixed-MCS sweep, three-way comparison of uniform QAM, ESS-shaped, and ECC-shaped PS chains. Edit the `USER SETTINGS` block at the top of the scenario file.
+- `tests/scenarios/scenario_mimo.m`: interactive TDL/open-loop MIMO sweep driver (uniform and/or PS chain modes).
+- `tests/scenarios/scenario_simo.m`: interactive TDL SIMO sweep driver (1 Tx, many Rx, single layer; uniform and/or PS chain modes).
+- `tests/scenarios/scenario_awgn_harq.m`: AWGN fixed-MCS evaluation with IR-HARQ.
+- `tests/scenarios/scenario_amc.m`: CDL-A 32x4 closed-loop AMC comparison (uniform baseline vs. uniform AMC vs. PS AMC). See [AMC](#amc).
+- `tests/scenarios/3GPP_eval_scenarios/`: 3GPP-evaluation reproduction scenarios (CDL MIMO with closed-loop precoding at 32x4/4x4 for CDL-A/B/C, an NTN-TDL-C open-loop link, and a CDL 1Tx32Rx uplink SIMO link). See [Source Layout](#source-layout).
+- `tests/run_scenario.m`: shared driver — `run_scenario(scenario_file)` loads, launches, and postprocesses the named scenario (e.g. `run_scenario("scenario_mimo_cdl_a_32x4")`), resolving scenario functions from `tests/scenarios/` and its subfolders.
+- `toolbox.loadScenario(params, repo_root)`: expands a scenario's `params` struct into ready-to-run configs (`scenario.variants`).
+- `toolbox.launchScenario(scenario)`: runs every variant via `toolbox.runSimulation`, annotates and aggregates the summary rows, and writes CSV/`.mat` output.
+- `toolbox.post.plot_scenario(run_result)`: postprocesses a launched scenario into BLER/throughput-vs-SNR overlay figures (and, where applicable, the PS-vs-uniform SNR gain).
+- `toolbox.runSimulation(cfg)`: programmatic single-simulation API, used by `toolbox.launchScenario` under the hood.
 
-```matlab
-run('tests/test_awgn.m')
-```
-
-```matlab
-run('tests/test_mimo.m')
-```
-
-```matlab
-run('tests/test_simo.m')
-```
+Run any scenario from MATLAB in the repository root by name:
 
 ```matlab
-run('tests/test_awgn_harq.m')
+run_scenario("scenario_awgn")
+run_scenario("scenario_mimo")
+run_scenario("scenario_simo")
+run_scenario("scenario_awgn_harq")
+run_scenario("scenario_amc")
+run_scenario("scenario_mimo_cdl_a_32x4")
+run_scenario("scenario_ntn")
+run_scenario("scenario_simo_cdl_1x32_ul")
 ```
 
-Each script writes outputs to a timestamped folder under `results/`:
+Each run writes outputs to a timestamped folder under `results/`:
 
 - a `*_summary.csv` table with per-SNR BLER, throughput, chain mode, MCS, MCS table, TBS, and shaping metadata.
 - a `*_workspace.mat` with the summary table, all `results` structs, and the base config.
@@ -99,7 +121,7 @@ disp(results.summaryTable)
 
 ## Main Parameters
 
-Edit only the `USER SETTINGS` block in `tests/test_awgn.m` / `tests/test_mimo.m` / `tests/test_simo.m` for normal runs. Settings common to all three scripts (shown with representative defaults; see each script for the full list):
+Edit only the `USER SETTINGS` block in `tests/scenarios/scenario_awgn.m` / `scenario_mimo.m` / `scenario_simo.m` for normal runs. Settings common to all three scenarios (shown with representative defaults; see each scenario file for the full list):
 
 ```matlab
 chain_modes = ["uniform", "ess", "ecc"];   % "uniform", "ps", or both
@@ -127,11 +149,11 @@ make_plots = true;                 % save overlay BLER/throughput figures
 output_root = "results/awgn";      % output directory root
 ```
 
-Per-script differences:
+Per-scenario differences:
 
-- `tests/test_awgn.m`: AWGN channel, single antenna (defaults `1x1`, 1 layer). No channel/precoding settings — the base config hardcodes the AWGN model. `chain_modes` defaults to `["uniform", "ess", "ecc"]` (the other two scripts default to `["uniform", "ps"]`, where `"ps"` means ESS).
-- `tests/test_mimo.m`: TDL fading (hardcoded `channel.model = "tdl"`, `TDL-A` profile) with open-loop precoding (defaults `4x4`, 4 layers). Adds `tdl_delay_spread`, `maximum_doppler_hz`, and `open_loop_precoder` (`"dft"`, `"identity"`, `"hadamard"`); `output_root = "results/mimo"`.
-- `tests/test_simo.m`: TDL fading (hardcoded `channel.model = "tdl"`, `TDL-A` profile), 1 Tx / many Rx / single layer with the identity open-loop precoder. Adds `tdl_delay_spread`, `maximum_doppler_hz`, and `open_loop_precoder`; `output_root = "results/mimo"`.
+- `tests/scenarios/scenario_awgn.m`: AWGN channel, single antenna (defaults `1x1`, 1 layer). No channel/precoding settings — the base config hardcodes the AWGN model. `chain_modes` defaults to `["uniform", "ess", "ecc"]` (the other two scenarios default to `["uniform", "ps"]`, where `"ps"` means ESS).
+- `tests/scenarios/scenario_mimo.m`: TDL fading (hardcoded `channel.model = "tdl"`, `TDL-A` profile) with open-loop precoding (defaults `4x4`, 4 layers). Adds `tdl_delay_spread`, `maximum_doppler_hz`, and `open_loop_precoder` (`"dft"`, `"identity"`, `"hadamard"`); `output_root = "results/mimo"`.
+- `tests/scenarios/scenario_simo.m`: TDL fading (hardcoded `channel.model = "tdl"`, `TDL-A` profile), 1 Tx / many Rx / single layer with the identity open-loop precoder. Adds `tdl_delay_spread`, `maximum_doppler_hz`, and `open_loop_precoder`; `output_root = "results/mimo"`.
 
 ## TX Chain
 
@@ -141,7 +163,7 @@ Shared NR path (both chain modes):
 payload bits
 -> nrDLSCH (TB/CB CRC, CB segmentation, LDPC, rate matching, SBPM interleaving)
 -> new_pdsch.m: scramble/descramble for unform QAM. shared nrSymbolModulate, nrLayerMap
--> optional open-loop precoding (dft / identity / hadamard)
+-> Precoding (both open-loop and closed-loop)
 -> nrOFDMModulate
 -> AWGN or nrTDLChannel + AWGN
 ```
@@ -182,7 +204,7 @@ Stages between the `new_pdsch_decode.m` markers are owned by that file. `[PS] pr
 
 Both chains run on the same standard NR flow. PS reuses the entire chain and only modifies the following: transport-block construction before `nrDLSCH` at TX, and demod preprocessing / TB recovery around the detector at RX. Everything in the center column is identical for both chains.
 
-The two `new_pdsch*` files are the only shared-path files that branch internally on `cfg.shaping.enabled`; the annotations below show exactly which operations each one owns. 
+The two `new_pdsch*` files are the only shared-path files that branch internally on `cfg.shaping.enabled`; the annotations below show exactly which operations each one owns.
 
 ```mermaid
 flowchart TB
@@ -229,11 +251,6 @@ flowchart TB
 
 Everything else — `nrDLSCH` / LDPC / rate matching / CRC, precoding, OFDM, the channel, channel estimation, the detector and LLR path, and `nrDLSCHDecoder` — is identical for both chains. The only PS-only stages outside the two `new_pdsch*` files are `build_tb_for_ps.m` (before `nrDLSCH`) and `deshape_tb.m` (after `nrDLSCHDecoder`).
 
-## MIMO Presets
-
-- 1x1 / SIMO (`num_tx_antennas == num_pdsch_layers`): `mimo.precodingMode = "none"`, identity precoder. Supports uniform and PS.
-- Open-loop MIMO (`num_tx_antennas > num_pdsch_layers`): `mimo.precodingMode = "openloop"` with `dft`, `identity`, or `hadamard` precoder selection via `open_loop_precoder`.
-
 ## Aligning TBS Between Uniform QAM and PS
 
 This alignment exists mainly for **performance-comparison purposes**: a fair uniform-vs-PS BLER-vs-SNR or throughput comparison requires both chains to carry (as closely as possible) the **same number of information bits per transport block** at the **same spectral efficiency**.
@@ -241,20 +258,11 @@ This alignment exists mainly for **performance-comparison purposes**: a fair uni
 For PS, we keep the coding rate fixed to the value from their MCS table. Instead, we adjust the Maxwell-Boltzmann shaping parameter `nu`:
 
 - **Uniform QAM**: the TBS comes directly from `nrTBS` for the selected MCS. This is the reference payload size.
-- **PS**: the PDSCH still carries a standard `nrDLSCH` transport block, but ESS/ECC amplitude shaping consumes part of it, so the user-visible **payload TBS** is determined based on `nu` (heavier shaping → fewer payload bits).
+- **PS**: the PDSCH still carries a standard `nrDLSCH` transport block, but ESS/ECC amplitude shaping consumes part of it, so the user-visible **payload TBS** is determined based on `nu`.
 
 When `match_ps_tbs_to_uniform = true` (`shaping.matchUniformTbs`), `+toolbox/+ProbShaping/+provider/match_ps_nu_to_uniform_tbs.m` searches `nu` for the PS payload TBS that comes **closest** to the uniform-QAM target for the same MCS. The match is approximate, not exact: `nu` is only sampled at a finite set of points and the PS payload TBS is itself quantized, so the two payloads generally differ by a small amount (typically within a ~1% tolerance, which the matcher reports). The chosen `nu` overrides the MCS-table `nu_MB` for the run (`shaping.useMcsTableNu = false`), so the PS chain delivers essentially the same information payload at the same coding rate as the uniform reference. Set `match_ps_tbs_to_uniform = false` to instead use the MCS table's fixed `nu_MB` directly (payload TBS then floats).
 
-## Testing
-
-The driver scripts double as the primary functional tests: each runs a full uniform and/or PS TX/channel/RX sweep end to end and writes a BLER/throughput summary you can inspect for regressions.
-
-- `tests/test_awgn.m`: single-antenna (1 Tx / 1 Rx / 1 layer) fixed-MCS sweep over a waveform-domain AWGN channel. Runs the selected `chain_modes` — uniform, ESS-shaped PS, and/or ECC-shaped PS (defaults to all three) — across the `snr_db` grid and writes per-SNR BLER, throughput, and shaping metadata to `results/awgn/`. Use it to smoke-test the shared NR chain and both PS codecs without fading effects.
-- `tests/test_mimo.m`: multi-antenna fixed-MCS sweep over a TDL fading channel (default 4 Tx / 4 Rx / 4 layers, TDL-A, open-loop precoding). Exercises the MIMO precoding path, TDL channel, and detector (`mmse` or `sphere`) in addition to the shared chain, writing results to `results/mimo/`. `tests/test_simo.m` is the SIMO variant (1 Tx, many Rx, single layer).
-- `tests/test_ess_encode_decode_test.m`: standalone round-trip test for the `@ess` codec (`+toolbox/+ProbShaping/+ess`). Sweeps modulation (`16QAM`/`64QAM`/`256QAM`/`1024QAM`), Maxwell-Boltzmann `nu`, shaped-bit level, and code-block length, builds an energy table and `ess` codec per case, then runs 100 random `encode`/`decode` round trips per case and asserts `decode(encode(bits)) == bits`. Run directly from MATLAB (`run('tests/test_ess_encode_decode_test.m')`); it errors out with a failure count if any round trip mismatches, or prints a `PASS` summary otherwise.
-- `tests/test_ecc_encode_decode_test.m`: similar to ESS, this is a standalone round-trip test for the `@ecc` codec (`+toolbox/+ProbShaping/+ecc`). 
-
-## PS Extension Notes
+## PS implementation
 
 Implemented PS pieces:
 
@@ -286,7 +294,83 @@ Configuration:
 - `cfg.shaping.txScaling` must be `"empirical"` for ECC — the `"lut"` power-scaling table is ESS-only and is rejected by `validate_config.m` when combined with `shaping.mode = "ecc"`.
 - All other PS settings (`cfg.shaping.nu`, `numShapedAmplitudeBitLevelsPerDimension`, `mcsTable`/`useMcsTableNu`, `matchUniformTbs`) are shared with ESS.
 
-Note: the ECC encoder calls `nr5g.internal.polar.decode`, an internal MATLAB 5G Toolbox function only available from **R2024a onward** — stricter than the R2023a baseline required for the rest of the repo (1024QAM support). Verify the ECC path with `tests/test_awgn.m`, which sweeps `"ecc"` by default alongside `"uniform"`/`"ess"`.
+Note: the ECC encoder calls `nr5g.internal.polar.decode`, an internal MATLAB 5G Toolbox function only available from **R2024a onward** — stricter than the R2023a baseline required for the rest of the repo (1024QAM support). Verify the ECC path with `run_scenario("scenario_awgn")`, which sweeps `"ecc"` by default alongside `"uniform"`/`"ess"`.
+
+## Testing the ESS/ECC module
+
+- `tests/test_ess_encode_decode.m`: standalone round-trip test for the `@ess` codec (`+toolbox/+ProbShaping/+ess`). Sweeps modulation (`16QAM`/`64QAM`/`256QAM`/`1024QAM`), Maxwell-Boltzmann `nu`, shaped-bit level, and code-block length, builds an energy table and `ess` codec per case, then runs 100 random `encode`/`decode` round trips per case and asserts `decode(encode(bits)) == bits`. Run directly from MATLAB (`run('tests/test_ess_encode_decode.m')`); it errors out with a failure count if any round trip mismatches, or prints a `PASS` summary otherwise.
+- `tests/test_ecc_encode_decode.m`: similar to ESS, this is a standalone round-trip test for the `@ecc` codec (`+toolbox/+ProbShaping/+ecc`).
+
+## CDL Channel
+
+`cfg.channel.model = "cdl"` routes the channel through `nrCDLChannel` (`+toolbox/+phy/+channel/create_cdl_channel.m`) instead of `nrTDLChannel`, giving the 3GPP CDL model:
+
+- `cfg.channel.delayProfile` — one of `CDL-A`/`CDL-B`/`CDL-C`/`CDL-D`/`CDL-E`.
+- Configurable Tx/Rx antenna array geometry (`transmitAntennaArray`/`receiveAntennaArray`: size, element spacing, polarization) and array orientation, plus carrier frequency and direction of travel.
+
+`tests/scenarios/3GPP_eval_scenarios/scenario_mimo_cdl_a_32x4.m` (run via `run_scenario("scenario_mimo_cdl_a_32x4")`) is an example driver (CDL-A, closed-loop precoding, uniform/PS chains); `scenario_simo_cdl_1x32_ul.m` demonstrates the uplink direction via `cfg.channel.swapTransmitAndReceive`.
+
+## Closed-Loop Beamforming
+
+`cfg.mimo.precodingMode = "closedloop"` (`cfg.mimo.closedLoop.method = "svd"`) selects SVD-based closed-loop precoding as an alternative to the existing open-loop (`dft`/`identity`/`hadamard`) precoders:
+
+- The Tx precoder is derived per-subband from a periodic SRS (based on genie SRS channel estimation).
+- `cfg.mimo.closedLoop.subbandSize` — PRG size in PRBs over which the precoder is held constant.
+- `cfg.mimo.closedLoop.periodicitySlots` — CSI report periodicity, in slots.
+- `cfg.mimo.closedLoop.processingDelaySlots` — feedback/processing delay applied before a new precoder takes effect (stale CSI is used for the first delayed slots).
+- `cfg.mimo.closedLoop.warmupPrecoder` — precoder used during the initial warm-up slots before the first CSI report is available.
+
+`tests/scenarios/3GPP_eval_scenarios/scenario_mimo_cdl_a_32x4.m` (run via `run_scenario("scenario_mimo_cdl_a_32x4")`) is an example CDL closed-loop SVD precoding driver.
+
+### Rank Adaptation
+
+`cfg.mimo.rankAdaptation = true` enables the CDL rank-switching rules for closed-loop precoding. The rules currently cover the configured 32x4 and 4x4 CDL-A/B/C cases and ranks 1 through 4:
+
+- Ranks 1 and 2 are left unchanged; rank 3 can reduce to rank 2, and rank 4 can reduce to rank 3 or cascade to rank 2.
+- Uniform-QAM rank adaptation is enabled only when `cfg.pdsch.mcsTable = "qam256"`; uniform `qam64` configurations are not adapted.
+- PS rank adaptation uses `ps_mcs_table1` or `ps_mcs_table2`. MCS is selected so the adapted total spectral efficiency (`rank × per-layer spectral efficiency`) is the maximum value that does not exceed the original total.
+- If no feasible MCS exists in the PS table, the chain switches to uniform `qam256`. Shaping is disabled for the adapted configuration.
+- Unsupported antenna/profile combinations, open-loop precoding, and `rankAdaptation = false` leave rank and MCS unchanged.
+
+## Adaptive Modulation and Coding (AMC)
+
+`cfg.simulation.amc.enabled = true` enables an adaptive modulation and coding mechanism that keeps
+**spectral efficiency constant** and adapts the modulation/code-rate/shaping-rate combination. It selects between two MCS tables that are spectral efficiency-identical
+row-for-row but different modulation, code rate and shaping  (`qam256` → `qam1024` on the uniform
+chain, `ps_mcs_table2` → `ps_mcs_table3` on the PS chain). 
+
+The decision is made **once per SNR point, during a warmup phase, and then held unchanged**. Each SNR point
+independently measures per-layer effective SNR over `amc.warmupBlocks` transport blocks (these
+are not counted toward BLER or throughput), decides, and applies the result.
+
+- `cfg.simulation.amc.selector = "condition_number"` — the selector rule. It compares the effective
+  SNR spread between the strongest and weakest PDSCH layer against
+  `cfg.simulation.amc.conditionNumberThresholdDb` (dB) and switches to the high-entropy table when the
+  spread exceeds it, on the reasoning that an ill-conditioned MIMO channel is better served by a
+  higher modulation order with more headroom towards the peak modulation order/entropy at the same spectral efficiency.
+- `cfg.simulation.amc.highMcsTable` — the candidate MCS table to switch to (`"qam1024"` or
+  `"ps_mcs_table3"`). 
+- `cfg.simulation.amc.warmupBlocks` — measurement transport blocks per SNR point.
+- `cfg.simulation.amc.prgAveragingDomain` / `timeAveragingDomain` — how per-PRG and per-warmup-block
+  MMSE SINR samples are reduced into one per-layer effective SNR. Both default to `"capacity"`
+  (average `log2(1+SINR)`, then invert back to dB).
+
+AMC requires `cfg.pdsch.numLayers >= 3` (the layer-spread metric
+is degenerate at lower rank), and HARQ disabled (`cfg.simulation.maxNumTransmissions = 1`). Per-layer
+SINR is measured per precoding RB group, so `cfg.mimo.closedLoop.subbandSize` is also the AMC
+measurement axis.
+
+`tests/scenarios/scenario_amc.m` (run via `run_scenario("scenario_amc")`) is an example: a
+CDL-A 32x4 closed-loop link comparing a uniform baseline without AMC, uniform AMC
+(`qam256` → `qam1024`), and PS AMC (`ps_mcs_table2` → `ps_mcs_table3`). 
+
+## Fast-Sphere Decoder
+
+`cfg.receiver.demapper = "fast_sphere"` selects a C++ based sphere decoder (`+toolbox/+phy/+receiver/+fastsphere/`) as a faster alternative to `comm.SphereDecoder` (`"sphere"`):
+
+- Algorithmically faster per than the `comm.SphereDecoder` from Matlab communication toolbox, since implements a few techniques to reduce the detection complexity.
+- In order to use the fast sphere decoder, we must compile the C++ code locally before use — see [compilation instructions](+toolbox/+phy/+receiver/+fastsphere/MEX_src/README.md) (`mex -O fast_sphere_decoder.cpp`, requires a C++ compiler registered with MATLAB via `mex -setup C++`).
+- `cfg.receiver.fastSphereNCand` and `cfg.receiver.fastSphereMaxList` control the per-PAM-level candidate list size and the max candidate list size used for soft-LLR computation.
 
 ## HARQ / Retransmission Support
 
@@ -295,28 +379,36 @@ The simulator supports per-transport-block HARQ retransmission with a configurab
 - `cfg.simulation.maxNumTransmissions` — max attempts per TB (default `1` = no retransmission).
 - `cfg.pdsch.rv` — RV sequence indexed by attempt number (default `[0 2 3 1]`); must have at least `maxNumTransmissions` entries.
 
-For both uniform QAM, and PS, the simulator utlize MATLAB 5G Toolbox's `nrDLSCHDecoder` soft-combines LLRs across consecutive HARQ attempts internally. 
+For both uniform QAM, and PS, the simulator utlize MATLAB 5G Toolbox's `nrDLSCHDecoder` soft-combines LLRs across consecutive HARQ attempts internally.
 
-PS shaping only applies to the initial (RV0) transmission: `validate_config.m` requires `cfg.pdsch.rv(1) == 0` whenever PS is enabled, and any retransmission of a PS transport block automatically falls back to the configured uniform-QAM MCS table (`cfg.shaping.uniformMcsTable`) at the same coding rate — ECC/ESS shaping does not apply to retransmitted bits.
+PS shaping only applies to the initial (RV0) transmission: `validate_config.m` requires `cfg.pdsch.rv(1) == 0` whenever PS is enabled, and any retransmission of a PS transport block automatically falls back to the modulation order of the same MCS in the configured uniform-QAM MCS table (`cfg.shaping.uniformMcsTable`) — ECC/ESS shaping does not apply to retransmitted bits.
 
-`tests/test_awgn_harq.m` is the dedicated HARQ example driver (`max_num_transmissions = 2`, `rv_sequence = [0 2 3 1]`); its summary rows and plots annotate `MaxNumTransmissions`, and `results.summaryTable` gains `MCS_Table_retx`/`CodedBits_retx` columns whenever `maxNumTransmissions > 1`.
+`tests/scenarios/scenario_awgn_harq.m` (run via `run_scenario("scenario_awgn_harq")`) is the dedicated HARQ example driver (`max_num_transmissions = 2`, `rv_sequence = [0 2 3 1]`); its summary rows and plots annotate `MaxNumTransmissions`, and `results.summaryTable` gains `MCS_Table_retx`/`CodedBits_retx` columns whenever `maxNumTransmissions > 1`.
 
 ## Source Layout
 
-- `tests/test_awgn.m`: AWGN fixed-MCS sweep driver (canonical entry point for AWGN studies).
-- `tests/test_awgn_harq.m`: HARQ evualation over AWGN channel.
-- `tests/test_mimo.m`: TDL/open-loop MIMO sweep driver.
-- `tests/test_simo.m`: TDL SIMO (1 Tx, many Rx, single layer) sweep driver.
-- `tests/test_ess_encode_decode_test.m`: standalone ESS codec round-trip test (see Testing).
+- `tests/scenarios/scenario_awgn.m`: AWGN fixed-MCS sweep scenario (canonical entry point for AWGN studies).
+- `tests/scenarios/scenario_awgn_harq.m`: HARQ evaluation over AWGN channel.
+- `tests/scenarios/scenario_mimo.m`: TDL/open-loop MIMO sweep scenario.
+- `tests/scenarios/scenario_simo.m`: TDL SIMO (1 Tx, many Rx, single layer) sweep scenario.
+- `tests/scenarios/scenario_amc.m`: AMC comparison scenario (CDL-A 32x4 closed loop).
+- `tests/scenarios/3GPP_eval_scenarios/`: 3GPP-evaluation reproduction scenarios — `scenario_mimo_cdl_{a,b,c}_{32x4,4x4}.m` (CDL closed-loop MIMO), `scenario_ntn.m` (NTN-TDL-C open-loop link), `scenario_simo_cdl_1x32_ul.m` (CDL uplink SIMO).
+- `tests/run_scenario.m`: shared driver for all of the above (`run_scenario(scenario_file)`), resolving scenario functions from `tests/scenarios/` and its subfolders.
+- `tests/test_ess_encode_decode.m`: standalone ESS codec round-trip test (see Testing).
+- `tests/test_ecc_encode_decode.m`: standalone ECC codec round-trip test (see Testing).
+- `toolbox.loadScenario.m`: expands a scenario's `params` struct into ready-to-run `{label, cfg}` variants.
+- `toolbox.launchScenario.m`: runs every variant, annotates and aggregates summary rows, writes CSV/`.mat` output.
+- `toolbox.buildChainConfig.m`: applies chain-mode (uniform/ESS/ECC) MCS table and shaping settings to a config.
+- `toolbox.post.plot_scenario.m`: postprocess wrapper — BLER/throughput overlay figures and, where applicable, SNR-gain plot.
 - `+toolbox/runSimulation.m`: core TX/channel/RX simulation loop; owns the per-SNR/per-TB run and metric aggregation.
 - `+toolbox/defaultConfig.m`: baseline configuration.
-- `+toolbox/getMcsInfo.m`: uniform (`qam64`, `qam256`) and PS (`ps_mcs_table1`, `ps_mcs_table2`) MCS tables.
-- `+toolbox/resolveMcsInfo.m`: selects the active MCS table and effective shaping `nu` for uniform or PS runs.
+- `+toolbox/getMcsInfo.m`: uniform (`qam64`, `qam256`, `qam1024`) and PS (`ps_mcs_table1`, `ps_mcs_table2`, `ps_mcs_table3`) MCS tables.
+- `+toolbox/+amc/`: AMC — candidate-menu derivation (`candidate_tables.m`), state setup (`configure.m`), per-warmup-block per-layer SINR measurement (`measure_layer_snr.m`, `reduce_prg_snr.m`, `warmup_accumulator.m`), and the decision dispatch (`decide.m`) plus the `condition_number` selector (`select_mcs_by_condition_number.m`).
 - `+toolbox/+config/`: config validation (`validate_config.m`) and 5G Toolbox dependency check (`require_5g_toolbox.m`).
 - `+toolbox/+phy/+pdsch/`: shared PDSCH build (`build_link_objects.m`), TX modulation (`new_pdsch.m`), RX demod/descramble (`new_pdsch_decode.m`), scrambling sequence and modulation-order utilities.
-- `+toolbox/+phy/+mimo/`: MIMO info and DFT/identity/Hadamard precoder builders, resource-grid precoding, and channel-estimate precoder mapping.
-- `+toolbox/+phy/+channel/`: AWGN/TDL channel creation, AWGN generation, receive-grid, and slot-timing helpers.
-- `+toolbox/+phy/+receiver/`: Sphere-decoder detection and initialization.
+- `+toolbox/+phy/+mimo/`: MIMO info and DFT/identity/Hadamard precoder builders, closed-loop SVD precoder derivation, resource-grid precoding, and channel-estimate precoder mapping.
+- `+toolbox/+phy/+channel/`: AWGN/TDL/CDL channel creation, AWGN generation, receive-grid, and slot-timing helpers.
+- `+toolbox/+phy/+receiver/`: Sphere-decoder and fast-sphere (MEX) detection and initialization.
 - `+toolbox/+ProbShaping/+tbgen/`: PS shaping-plan initialization (`init.m`), prestructured TB construction (`build_tb_for_ps.m`), and TB deshaping (`deshape_tb.m`).
 - `+toolbox/+ProbShaping/+ess/`: ESS energy-table generation, Maxwell-Boltzmann distribution, TX-scaling LUT, and the `@ess` encoder/decoder class.
 - `+toolbox/+ProbShaping/+ecc/`: ECC based on shaping relying on 5G polar decoder from Matlab 5G toolbox.

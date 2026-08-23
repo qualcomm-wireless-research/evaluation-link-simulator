@@ -11,7 +11,7 @@ assignees: ''
 A clear and concise description of the issue.
 
 **Simulation settings**
-- Entry point: `tests/test_awgn.m` / `tests/test_mimo.m` / `tests/test_simo.m` / `toolbox.runSimulation` / other:
+- Entry point: `run_scenario("scenario_awgn")` / `run_scenario("scenario_mimo")` / `run_scenario("scenario_simo")` / `toolbox.runSimulation` / other:
 - `chain_modes`:
 - `mcs_list`:
 - `snr_db`:

@@ -55,7 +55,6 @@ evaluations = struct( ...
         ps_cfg.shaping.enabled = true;
         ps_cfg.shaping.mode = opts.ShapingMode;
         ps_cfg.shaping.mcsTable = opts.PsMcsTable;
-        ps_cfg.shaping.useMcsTableNu = false;
         ps_cfg.shaping.nu = nu;
         ps_cfg.shaping.numShapedAmplitudeBitLevelsPerDimension = requested_shaped_bit_level;
 
@@ -183,7 +182,6 @@ ps_cfg = cfg;
 ps_cfg.shaping.enabled = true;
 ps_cfg.shaping.mode = shaping_mode;
 ps_cfg.shaping.mcsTable = ps_mcs_table;
-ps_cfg.shaping.useMcsTableNu = false;
 ps_cfg.shaping.numShapedAmplitudeBitLevelsPerDimension = shaped_bit_level;
 
 mcs_info = toolbox.getMcsInfo(ps_cfg.pdsch.mcsIndex, ps_mcs_table);

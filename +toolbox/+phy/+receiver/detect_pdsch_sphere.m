@@ -19,7 +19,6 @@ function llr_out = detect_pdsch_sphere(pdsch_rx, pdsch_hest, n_var, sphere_decod
 %
 %   Outputs:
 %       llr_out - Soft LLRs (num_re x num_layers x bits_per_symbol)
-%       csi     - Channel state information (num_re x num_layers)
 %
 %   Note: This function uses a pre-initialized comm.SphereDecoder for efficiency.
 %   The sphere decoder expects: y = H*x + n, where:
@@ -52,8 +51,6 @@ if size(pdsch_hest, 1) ~= num_re || size(pdsch_hest, 2) ~= num_rx
         num_re, num_rx, num_layers, size(pdsch_hest, 1), size(pdsch_hest, 2), size(pdsch_hest, 3));
 end
 
-% Initialize outputs
-% llr_out = zeros(num_re, num_layers, sphere_decoder_obj.bitsPerSymbol);
 
 % expects RXSYMBOLS as num_re-by-num_rx and CHAN as num_re-by-num_layers-by-num_rx.
 % complex(...) is required because comm.SphereDecoder rejects purely real CHAN,
