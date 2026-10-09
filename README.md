@@ -10,7 +10,7 @@ MATLAB based link-level simulator for fixed-MCS BLER and throughput studies, com
   - ESS-based shaping
   - ECC-based (multi-level polar cover-code) shaping. See [ECC-Based Shaping](#ecc-based-shaping).
 - IR-HARQ based retransmission and combining: up to `cfg.simulation.maxNumTransmissions` attempts per TB with a configurable RV sequence and early exit on CRC success. See [HARQ / Retransmission Support](#harq--retransmission-support).
-- PS MCS tables (`ps_mcs_table1`, `ps_mcs_table2`, `ps_mcs_table3`), plus uniform tables `qam64`/`qam256`/`qam1024`.
+- PS MCS tables (`ps_mcs_table1`, `ps_mcs_table2`, `ps_mcs_table3`), plus uniform tables `qam64`/`qam256`/`qam1024`/`qam_nrminus1`. See [Uniform MCS Tables](#uniform-mcs-tables).
 - Adaptive modulation and coding (AMC) (`cfg.simulation.amc.enabled`): selection between two MCS tables, based on the measured per-layer effective-SNR spread. See [AMC](#amc).
 - TBS matching bewteen uniform QAM and PS: for PS mode, for each MCS with the coding rate determined from the MCS table, compute the MB parameter `nu` so PS payload TBS matches the uniform-QAM TBS for the same MCS (`shaping.matchUniformTbs`).
 - Supported channel models
@@ -85,6 +85,7 @@ Each scenario is a pure-parameter `tests/scenarios/scenario_*.m` function, run t
 - `tests/scenarios/scenario_simo.m`: interactive TDL SIMO sweep driver (1 Tx, many Rx, single layer; uniform and/or PS chain modes).
 - `tests/scenarios/scenario_awgn_harq.m`: AWGN fixed-MCS evaluation with IR-HARQ.
 - `tests/scenarios/scenario_amc.m`: CDL-A 32x4 closed-loop AMC comparison (uniform baseline vs. uniform AMC vs. PS AMC). See [AMC](#amc).
+- `tests/scenarios/scenario_mimo_uniform_amc.m`: TDL-A open-loop 4x4 rank-4 BLER comparison of `qam256`, `qam1024`, and `qam_nrminus1` at a fixed MCS (uniform QAM only). See [Uniform MCS Tables](#uniform-mcs-tables).
 - `tests/scenarios/3GPP_eval_scenarios/`: 3GPP-evaluation reproduction scenarios (CDL MIMO with closed-loop precoding at 32x4/4x4 for CDL-A/B/C, an NTN-TDL-C open-loop link, and a CDL 1Tx32Rx uplink SIMO link). See [Source Layout](#source-layout).
 - `tests/run_scenario.m`: shared driver — `run_scenario(scenario_file)` loads, launches, and postprocesses the named scenario (e.g. `run_scenario("scenario_mimo_cdl_a_32x4")`), resolving scenario functions from `tests/scenarios/` and its subfolders.
 - `toolbox.loadScenario(params, repo_root)`: expands a scenario's `params` struct into ready-to-run configs (`scenario.variants`).
@@ -332,6 +333,21 @@ Note: the ECC encoder calls `nr5g.internal.polar.decode`, an internal MATLAB 5G 
 - If no feasible MCS exists in the PS table, the chain switches to uniform `qam256`. Shaping is disabled for the adapted configuration.
 - Unsupported antenna/profile combinations, open-loop precoding, and `rankAdaptation = false` leave rank and MCS unchanged.
 
+## Uniform MCS Tables
+
+Besides `qam64` and `qam256` (TS 38.214), `+toolbox/getMcsInfo.m` provides two uniform-QAM companion tables to `qam256`, covering MCS 5-27. Both keep `qam256`'s spectral efficiency row-for-row and differ only in the modulation order / code rate split:
+
+- `qam1024` ("NR+1"): every row moves up one modulation order (up to 1024QAM), with the code rate scaled down to match.
+- `qam_nrminus1` ("NR-1"): each row uses the lowest modulation order whose code rate stays at or below 948/1024. 8 of the 23 rows drop one order (MCS 5, 6, 11-14, 20, 21); the others are identical to `qam256`.
+
+Example at MCS 20: `qam256` 256QAM 682.5/1024, `qam1024` 1024QAM 546/1024, `qam_nrminus1` 64QAM 910/1024.
+
+`tests/scenarios/scenario_mimo_uniform_amc.m` compares BLER/throughput versus SNR for the three tables at a fixed MCS (default 20) over TDL-A, 4x4, 4 layers, open-loop identity precoding, and the fast-sphere detector. PS is disabled. Choose the tables with `uniform_mcs_tables` and the MCS with `mcs_index`:
+
+```matlab
+run_scenario("scenario_mimo_uniform_amc")
+```
+
 ## Adaptive Modulation and Coding (AMC)
 
 `cfg.simulation.amc.enabled = true` enables an adaptive modulation and coding mechanism that keeps
@@ -392,6 +408,7 @@ PS shaping only applies to the initial (RV0) transmission: `validate_config.m` r
 - `tests/scenarios/scenario_mimo.m`: TDL/open-loop MIMO sweep scenario.
 - `tests/scenarios/scenario_simo.m`: TDL SIMO (1 Tx, many Rx, single layer) sweep scenario.
 - `tests/scenarios/scenario_amc.m`: AMC comparison scenario (CDL-A 32x4 closed loop).
+- `tests/scenarios/scenario_mimo_uniform_amc.m`: TDL-A 4x4 rank-4 comparison of the `qam256` / `qam1024` / `qam_nrminus1` uniform MCS tables.
 - `tests/scenarios/3GPP_eval_scenarios/`: 3GPP-evaluation reproduction scenarios — `scenario_mimo_cdl_{a,b,c}_{32x4,4x4}.m` (CDL closed-loop MIMO), `scenario_ntn.m` (NTN-TDL-C open-loop link), `scenario_simo_cdl_1x32_ul.m` (CDL uplink SIMO).
 - `tests/run_scenario.m`: shared driver for all of the above (`run_scenario(scenario_file)`), resolving scenario functions from `tests/scenarios/` and its subfolders.
 - `tests/test_ess_encode_decode.m`: standalone ESS codec round-trip test (see Testing).
@@ -402,7 +419,7 @@ PS shaping only applies to the initial (RV0) transmission: `validate_config.m` r
 - `toolbox.post.plot_scenario.m`: postprocess wrapper — BLER/throughput overlay figures and, where applicable, SNR-gain plot.
 - `+toolbox/runSimulation.m`: core TX/channel/RX simulation loop; owns the per-SNR/per-TB run and metric aggregation.
 - `+toolbox/defaultConfig.m`: baseline configuration.
-- `+toolbox/getMcsInfo.m`: uniform (`qam64`, `qam256`, `qam1024`) and PS (`ps_mcs_table1`, `ps_mcs_table2`, `ps_mcs_table3`) MCS tables.
+- `+toolbox/getMcsInfo.m`: uniform (`qam64`, `qam256`, `qam1024`, `qam_nrminus1`) and PS (`ps_mcs_table1`, `ps_mcs_table2`, `ps_mcs_table3`) MCS tables.
 - `+toolbox/+amc/`: AMC — candidate-menu derivation (`candidate_tables.m`), state setup (`configure.m`), per-warmup-block per-layer SINR measurement (`measure_layer_snr.m`, `reduce_prg_snr.m`, `warmup_accumulator.m`), and the decision dispatch (`decide.m`) plus the `condition_number` selector (`select_mcs_by_condition_number.m`).
 - `+toolbox/+config/`: config validation (`validate_config.m`) and 5G Toolbox dependency check (`require_5g_toolbox.m`).
 - `+toolbox/+phy/+pdsch/`: shared PDSCH build (`build_link_objects.m`), TX modulation (`new_pdsch.m`), RX demod/descramble (`new_pdsch_decode.m`), scrambling sequence and modulation-order utilities.
